@@ -107,36 +107,6 @@ class TuyaWizard:
         pass
     return obj
 
-  def postprocessing_device(self, tuyadevices):
-    for dev in tuyadevices:
-      if "key" not in dev:
-        dev["key"] = dev.get("local_key", "")
-      if "ip" in dev:
-        dev["ip"] = ""
-      if "sub" in dev and dev["sub"]:
-        # no parent from cloud, try to find it via the local key
-        if "parent" in dev and dev["parent"]:
-          continue
-
-        # Set "parent" to an empty string in case we can't find it
-        dev["parent"] = ""
-
-        # Only try to find the parent if the device has a local key
-        if "key" in dev and dev["key"]:
-          if "id" not in dev:
-            dev["id"] = ""
-          found = False
-          # Loop through all devices again to try and find a non-sub-device with the same local key
-          for parent in tuyadevices:
-            if "id" not in parent or parent["id"] == dev["id"]:
-              continue
-            # Check for matching local keys and if device is not a sub-device then assume we found the parent
-            if "key" in parent and parent["key"] and dev["key"] == parent["key"] and ("sub" not in parent or not parent["sub"]):
-              found = parent
-              break
-          if found:
-            dev["parent"] = found["id"]
-
   def fetch_devices(self, save_path=None):
     if not self.manager:
       raise RuntimeError("Manager not initialized")
@@ -148,7 +118,6 @@ class TuyaWizard:
         return False
       self.manager.update_device_cache()
     tuyadevices = [self.convert_to_dict_recursive(dev) for dev in self.manager.device_map.values()]
-    self.postprocessing_device(tuyadevices)
     return tuyadevices
 
   def qr_login(self):
@@ -183,16 +152,9 @@ class TuyaWizard:
         self.logger.warning(f"Stored login info failed → fallback to QR: {e}")
     return self.qr_login()
 
-def wizard(user_code, color, retries, forcescan, assume_yes, skip_poll, DEVICEFILE, SNAPSHOTFILE, CREDSFILE, creds=None, qr_callback=None):
+def wizard(user_code, DEVICEFILE, CREDSFILE, creds=None, qr_callback=None):
   import qrcode
-  import tinytuya.scanner
   import sys
-  try:
-    from colorama import init
-    HAVE_COLORAMA = True
-  except ImportError:
-    HAVE_COLORAMA = False
-  HAVE_COLOR = HAVE_COLORAMA or not sys.platform.startswith('win')
 
   def terminal_qr_handler(url):
     if url:
@@ -201,52 +163,20 @@ def wizard(user_code, color, retries, forcescan, assume_yes, skip_poll, DEVICEFI
       qr.add_data(url)
       qr.make(fit=True)
       qr.print_ascii(invert=True)
-      print(normal + "Scan this code with the " + bold + "SmartLife or TuyaSmart App" + normal + ". Waiting for scan...")
+      print("Scan this code with the SmartLife or TuyaSmart App. Waiting for scan...")
     else:
-      print(normal + "Scan done.")
-
+      print("Scan done.")
   logger = logging.getLogger(__name__)
-
-  DEVICEFILE = tinytuya.DEVICEFILE
-  SNAPSHOTFILE = tinytuya.SNAPSHOTFILE
-
-  color = color and HAVE_COLOR
-  (bold, subbold, normal, dim, alert, alertdim, cyan, red, yellow) = tinytuya.termcolor(color)
-
   if not user_code and not creds:
-    user_code = input("Enter " + bold + "User Code" + normal + " from SmartLife or Tuya App (Leave blank to use Stored Code): ")
+    user_code = input("Enter User Code from SmartLife or Tuya App (Leave blank to use Stored Code): ")
   tuya = TuyaWizard(logger=logger, info_file=CREDSFILE)
+
   if not tuya.login_auto(user_code=user_code, creds=creds, qr_callback=qr_callback or terminal_qr_handler):
     return
+
   tuyadevices = tuya.fetch_devices()
 
-  if skip_poll:
-    answer = "n"
-  elif assume_yes:
-    answer = "y"
-  else:
-    answer = input(subbold + "\nPoll local devices? " + normal + "(Y/n): ")
-    if answer.lower().find("n") < 0:
-      tinytuya.scanner.SNAPSHOTFILE = SNAPSHOTFILE
-      result = tinytuya.scanner.poll_and_display(tuyadevices, color=color, scantime=retries, forcescan=forcescan, snapshot=True)
-      iplist = {}
-      found = 0
-      for itm in result:
-        if "gwId" in itm and itm["gwId"]:
-          gwid = itm["gwId"]
-          ip = itm["ip"] if "ip" in itm and itm["ip"] else ""
-          ver = itm["version"] if "version" in itm and itm["version"] else ""
-          iplist[gwid] = (ip, ver)
-      for k in range(len(tuyadevices)):
-        gwid = tuyadevices[k]["id"]
-        if gwid in iplist:
-          tuyadevices[k]["ip"] = iplist[gwid][0]
-          tuyadevices[k]["version"] = iplist[gwid][1]
-          if iplist[gwid][0]: found += 1
-      if found:
-        logger.info("%d device IP addresses found" % found)
-
-  logging.info("\n>> Saving tuya devices to " + DEVICEFILE)
+  print("\n>> Saving tuya devices to " + DEVICEFILE)
   output = json.dumps(tuyadevices, indent=4)
   with open(DEVICEFILE, "w") as outfile:
     outfile.write(output)
