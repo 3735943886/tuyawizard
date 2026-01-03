@@ -158,7 +158,7 @@ def wizard(user_code, DEVICEFILE, CREDSFILE, creds=None, qr_callback=None):
 
   def terminal_qr_handler(url):
     if url:
-      print(normal + "\n=== QR Code Generated ===")
+      print("\n=== QR Code Generated ===")
       qr = qrcode.QRCode(border=1)
       qr.add_data(url)
       qr.make(fit=True)
