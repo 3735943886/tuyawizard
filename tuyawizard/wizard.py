@@ -183,6 +183,258 @@ class TuyaWizard:
                 
         return self.qr_login()
 
+
+def load_devices_file(path: str) -> List[Dict[str, Any]]:
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if isinstance(payload, dict):
+        payload = payload.get("devices", [])
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def save_devices_file(path: str, devices: List[Dict[str, Any]]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(devices, f, ensure_ascii=False, indent=2)
+
+
+def choose_parent(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not candidates:
+        return None
+    preferred = [c for c in candidates if c.get("category") in {"wg2", "jzq", "zjq"}]
+    return preferred[0] if preferred else candidates[0]
+
+
+def index_parents(devices: List[Dict[str, Any]]) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, str]]]:
+    parents_by_key: Dict[str, List[Dict[str, Any]]] = {}
+    missing_local_key_parents: List[Dict[str, str]] = []
+    for device in devices:
+        local_key = device.get("local_key")
+        if not local_key:
+            if device.get("sub") is False:
+                missing_local_key_parents.append(
+                    {"id": str(device.get("id", "")), "name": str(device.get("name", ""))}
+                )
+            continue
+        if device.get("sub") is False:
+            parents_by_key.setdefault(str(local_key), []).append(device)
+    return parents_by_key, missing_local_key_parents
+
+
+def match_parents(
+    devices: List[Dict[str, Any]], parents_by_key: Dict[str, List[Dict[str, Any]]]
+) -> Tuple[int, List[Dict[str, str]], Dict[str, List[Dict[str, str]]]]:
+    assigned = 0
+    missing_local_key: List[Dict[str, str]] = []
+    missing_parent_match: Dict[str, List[Dict[str, str]]] = {}
+    for device in devices:
+        if device.get("sub") is not True:
+            continue
+        local_key = device.get("local_key")
+        if not local_key:
+            missing_local_key.append(
+                {"id": str(device.get("id", "")), "name": str(device.get("name", ""))}
+            )
+            continue
+        parent = choose_parent(parents_by_key.get(str(local_key), []))
+        if parent and parent.get("id"):
+            device["parent"] = parent["id"]
+            assigned += 1
+        else:
+            missing_parent_match.setdefault(str(local_key), []).append(
+                {"id": str(device.get("id", "")), "name": str(device.get("name", ""))}
+            )
+    return assigned, missing_local_key, missing_parent_match
+
+
+def apply_fallback_assumption(
+    devices_by_id: Dict[str, Dict[str, Any]],
+    parents_by_key: Dict[str, List[Dict[str, Any]]],
+    missing_local_key: List[Dict[str, str]],
+    missing_parent_match: Dict[str, List[Dict[str, str]]],
+) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
+    if len(missing_local_key) != 1 or len(missing_parent_match) != 1:
+        return [], {}
+    only_key = next(iter(missing_parent_match))
+    if parents_by_key.get(only_key):
+        return [], {}
+    assumed_parent = missing_local_key[0]
+    parent_device = devices_by_id.get(assumed_parent["id"])
+    if parent_device is None:
+        return [], {}
+    parent_device["local_key"] = only_key
+    subdevices = []
+    for item in missing_parent_match[only_key]:
+        device = devices_by_id.get(item["id"])
+        if not device:
+            continue
+        device["parent"] = assumed_parent["id"]
+        subdevices.append(item)
+    summary = {
+        "assumed_parent": {
+            "id": assumed_parent["id"],
+            "name": assumed_parent["name"],
+            "local_key": only_key,
+        },
+        "subdevices": subdevices,
+        "missing_local_key_count": len(missing_local_key),
+        "missing_parent_match_count": len(subdevices),
+    }
+    return subdevices, summary
+
+
+def scan_devices() -> List[Dict[str, Any]]:
+    try:
+        from rustuya import Scanner
+    except Exception:
+        return []
+    return Scanner.scan() or []
+
+
+def normalize_version(raw_version: Optional[str]) -> Optional[str]:
+    if not raw_version:
+        return None
+    if raw_version.startswith("V") and "_" in raw_version:
+        version_body = raw_version[1:].replace("_", ".")
+        return version_body
+    return raw_version
+
+
+def parent_link_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+    parents_by_key, missing_local_key_parents = index_parents(devices)
+    assigned, missing_local_key, missing_parent_match = match_parents(devices, parents_by_key)
+    devices_by_id = {str(device.get("id", "")): device for device in devices}
+    fallback_matches, fallback_summary = apply_fallback_assumption(
+        devices_by_id, parents_by_key, missing_local_key, missing_parent_match
+    )
+    if fallback_matches:
+        assigned += len(fallback_matches)
+        missing_parent_match = {}
+    context.update(
+        {
+            "assigned": assigned,
+            "missing_local_key": missing_local_key,
+            "missing_local_key_parents": missing_local_key_parents,
+            "missing_parent_match": missing_parent_match,
+            "fallback_summary": fallback_summary,
+        }
+    )
+
+
+def scan_update_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+    scanned = scan_devices()
+    if not scanned:
+        return
+    by_id = {str(item.get("id")): item for item in scanned if item.get("id")}
+    updated_ip_list: List[Dict[str, str]] = []
+    updated_version_list: List[Dict[str, str]] = []
+    for device in devices:
+        device_id = str(device.get("id", ""))
+        scan_item = by_id.get(device_id)
+        if not scan_item:
+            continue
+        scanned_ip = scan_item.get("ip")
+        scanned_version = normalize_version(scan_item.get("version"))
+        if scanned_ip and device.get("ip") != scanned_ip:
+            updated_ip_list.append(
+                {
+                    "id": device_id,
+                    "name": str(device.get("name", "")),
+                    "ip": str(scanned_ip),
+                }
+            )
+            device["ip"] = scanned_ip
+        if scanned_version and device.get("version") != scanned_version:
+            updated_version_list.append(
+                {
+                    "id": device_id,
+                    "name": str(device.get("name", "")),
+                    "version": str(scanned_version),
+                }
+            )
+            device["version"] = scanned_version
+    context.update(
+        {
+            "scan_updated_ip_list": updated_ip_list,
+            "scan_updated_version_list": updated_version_list,
+        }
+    )
+
+
+def get_transforms(mode: str) -> List[Callable[[List[Dict[str, Any]], Dict[str, Any]], None]]:
+    if mode == "parent":
+        return [parent_link_transform]
+    if mode == "scan":
+        return [scan_update_transform]
+    return [parent_link_transform, scan_update_transform]
+
+
+def postprocess_devices(devices: List[Dict[str, Any]], mode: str) -> Dict[str, Any]:
+    context: Dict[str, Any] = {}
+    for transform in get_transforms(mode):
+        transform(devices, context)
+    return context
+
+
+def log_summary(context: Dict[str, Any], logger: logging.Logger) -> None:
+    summary = context.get("fallback_summary", {})
+    if summary:
+        logger.info(
+            f"{summary['missing_local_key_count']} device has no local_key and "
+            f"{summary['missing_parent_match_count']} subdevices share the same local_key "
+            "but no parent exists, so it was assumed and matched to the device without local_key."
+        )
+        assumed_parent = summary["assumed_parent"]
+        logger.info(
+            f"Assuming parent: {assumed_parent['id']} {assumed_parent['name']} "
+            f"({assumed_parent['local_key']})"
+        )
+        logger.info("Subdevices:")
+        for item in summary["subdevices"]:
+            logger.info(f"{item['id']} {item['name']}")
+    missing_local_key = context.get("missing_local_key", [])
+    missing_local_key_parents = context.get("missing_local_key_parents", [])
+    missing_parent_match = context.get("missing_parent_match", {})
+    if missing_local_key:
+        logger.info("Missing local_key:")
+        for item in missing_local_key:
+            logger.info(f"{item['id']} {item['name']}")
+    if missing_local_key_parents:
+        logger.info("Missing local_key parents:")
+        for item in missing_local_key_parents:
+            logger.info(f"{item['id']} {item['name']}")
+    if missing_parent_match:
+        logger.info("Missing parent match:")
+        for key, items in missing_parent_match.items():
+            for item in items:
+                logger.info(f"{item['id']} {item['name']} ({key})")
+    scan_updated_ip_list = context.get("scan_updated_ip_list", [])
+    scan_updated_version_list = context.get("scan_updated_version_list", [])
+    if scan_updated_ip_list:
+        logger.info(f"Scan updated ip count: {len(scan_updated_ip_list)}")
+        logger.info("Scan updated ip list:")
+        for item in scan_updated_ip_list:
+            logger.info(f"{item['id']} {item['name']} -> {item['ip']}")
+    if scan_updated_version_list:
+        logger.info(f"Scan updated version count: {len(scan_updated_version_list)}")
+        logger.info("Scan updated version list:")
+        for item in scan_updated_version_list:
+            logger.info(f"{item['id']} {item['name']} -> {item['version']}")
+
+
+def postprocess_file(device_file: str, mode: str, logger: logging.Logger) -> None:
+    if not os.path.exists(device_file):
+        logger.warning(f"Device file not found: {device_file}")
+        return
+    try:
+        devices = load_devices_file(device_file)
+        context = postprocess_devices(devices, mode)
+        save_devices_file(device_file, devices)
+        log_summary(context, logger)
+    except Exception as exc:
+        logger.warning(f"Postprocess skipped: {exc}")
+
 def terminal_qr_handler(url: Optional[str]):
     import qrcode
     if url:

@@ -38,6 +38,35 @@ python -m tuyawizard
 | :--- | :--- | :--- |
 | `-device-file FILE` | `tuyadevices.json` | Path to save the discovered devices list (JSON). |
 | `-credentials-file FILE` | `tuyacreds.json` | Path to load/save cloud authentication credentials (JSON). |
+| `--postprocess` | `false` | Run postprocess after fetching devices. |
+| `--postprocess-only` | `false` | Run postprocess only (skip wizard login/fetch). |
+| `--postprocess-mode` | `all` | Select postprocess mode: `parent`, `scan`, `all`. |
+
+### Postprocess Examples
+
+Run wizard and then postprocess:
+
+```bash
+python -m tuyawizard --postprocess
+```
+
+Run postprocess only:
+
+```bash
+python -m tuyawizard --postprocess-only
+```
+
+Run parent-only postprocess:
+
+```bash
+python -m tuyawizard --postprocess-only --postprocess-mode parent
+```
+
+Run scan-only postprocess:
+
+```bash
+python -m tuyawizard --postprocess-only --postprocess-mode scan
+```
 
 ---
 
