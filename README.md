@@ -22,6 +22,12 @@ Install the package via pip:
 pip install tuyawizard
 ```
 
+To enable the local network **scan** feature, you need to install the optional dependency:
+
+```bash
+pip install rustuya
+```
+
 ---
 
 ## ▶️ Quick Start (CLI)
