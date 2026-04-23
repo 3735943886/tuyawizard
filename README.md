@@ -48,6 +48,10 @@ python -m tuyawizard
 | `--postprocess-only` | `false` | Run postprocess only (skip wizard login/fetch). |
 | `--postprocess-mode` | `all` | Select postprocess mode: `parent`, `scan`, `all`. |
 
+### Post process
+- **parent**: In the post‑process stage, the output JSON is adjusted so that each `subdevice` is properly linked to its parent device.
+- **scan**: The output JSON is enriched with `IP` and `version` details obtained through the realtime scanner (requires `rustuya`).
+
 ### Postprocess Examples
 
 Run wizard and then postprocess:
