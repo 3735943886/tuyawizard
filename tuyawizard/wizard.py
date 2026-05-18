@@ -45,9 +45,13 @@ class TuyaWizard:
                     info = json.load(f)
             
             if info:
-                # Remove user_code if it exists as it should be provided per session or from current info
-                info.pop("user_code", None)
+                # Don't let a stored user_code override one provided this
+                # session, but keep it as a fallback so QR re-login still
+                # works when tokens expire.
+                stored_user_code = info.pop("user_code", None)
                 self.info.update(info)
+                if stored_user_code and not self.info.get("user_code"):
+                    self.info["user_code"] = stored_user_code
                 self.logger.info("Loaded stored login info")
                 return True
             return False
