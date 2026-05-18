@@ -377,11 +377,23 @@ def scan_update_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]
     apply_scan_results(devices, scanned, context)
 
 
+VALID_POSTPROCESS_MODES = ("parent", "scan", "all")
+
+
 def postprocess_devices(
     devices: List[Dict[str, Any]],
     mode: str,
     scan_results: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    if mode not in VALID_POSTPROCESS_MODES:
+        raise ValueError(
+            f"Invalid postprocess mode: {mode!r}. "
+            f"Expected one of {VALID_POSTPROCESS_MODES}."
+        )
+    if scan_results is not None and mode == "parent":
+        logging.getLogger(__name__).warning(
+            "scan_results were provided but mode is 'parent'; scan_results will be ignored."
+        )
     context: Dict[str, Any] = {}
     if mode in ("parent", "all"):
         parent_link_transform(devices, context)
