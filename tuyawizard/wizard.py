@@ -322,11 +322,18 @@ def parent_link_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]
     )
 
 
-def scan_update_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
-    scanned = scan_devices()
-    if not scanned:
-        return
-    by_id = {str(item.get("id")): item for item in scanned if item.get("id")}
+def apply_scan_results(
+    devices: List[Dict[str, Any]],
+    scan_results: List[Dict[str, Any]],
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Merge externally-supplied scan results into devices.
+
+    Each scan_results item must have ``id`` and ``ip``; ``version`` is optional.
+    """
+    if context is None:
+        context = {}
+    by_id = {str(item.get("id")): item for item in scan_results if item.get("id")}
     updated_ip_list: List[Dict[str, str]] = []
     updated_version_list: List[Dict[str, str]] = []
     for device in devices:
@@ -360,20 +367,29 @@ def scan_update_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]
             "scan_updated_version_list": updated_version_list,
         }
     )
+    return context
 
 
-def get_transforms(mode: str) -> List[Callable[[List[Dict[str, Any]], Dict[str, Any]], None]]:
-    if mode == "parent":
-        return [parent_link_transform]
-    if mode == "scan":
-        return [scan_update_transform]
-    return [parent_link_transform, scan_update_transform]
+def scan_update_transform(devices: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+    scanned = scan_devices()
+    if not scanned:
+        return
+    apply_scan_results(devices, scanned, context)
 
 
-def postprocess_devices(devices: List[Dict[str, Any]], mode: str) -> Dict[str, Any]:
+def postprocess_devices(
+    devices: List[Dict[str, Any]],
+    mode: str,
+    scan_results: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     context: Dict[str, Any] = {}
-    for transform in get_transforms(mode):
-        transform(devices, context)
+    if mode in ("parent", "all"):
+        parent_link_transform(devices, context)
+    if mode in ("scan", "all"):
+        if scan_results is not None:
+            apply_scan_results(devices, scan_results, context)
+        else:
+            scan_update_transform(devices, context)
     return context
 
 
@@ -423,13 +439,18 @@ def log_summary(context: Dict[str, Any], logger: logging.Logger) -> None:
             logger.info(f"{item['id']} {item['name']} -> {item['version']}")
 
 
-def postprocess_file(device_file: str, mode: str, logger: logging.Logger) -> None:
+def postprocess_file(
+    device_file: str,
+    mode: str,
+    logger: logging.Logger,
+    scan_results: Optional[List[Dict[str, Any]]] = None,
+) -> None:
     if not os.path.exists(device_file):
         logger.warning(f"Device file not found: {device_file}")
         return
     try:
         devices = load_devices_file(device_file)
-        context = postprocess_devices(devices, mode)
+        context = postprocess_devices(devices, mode, scan_results=scan_results)
         save_devices_file(device_file, devices)
         log_summary(context, logger)
     except Exception as exc:

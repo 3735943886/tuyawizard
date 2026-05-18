@@ -80,6 +80,49 @@ python -m tuyawizard --postprocess-only --postprocess-mode scan
 
 ---
 
+## 🐍 Using as a Python Module
+
+`tuyawizard` can also be imported and used as a module inside your own Python
+project — fetch the device list from the Tuya cloud and, optionally, enrich
+it with LAN scan data.
+
+### With `rustuya` installed
+
+If `rustuya` is installed, just call `postprocess_devices` after fetching —
+it runs the LAN scan and merges the results in one step:
+
+```python
+from tuyawizard import TuyaWizard, postprocess_devices
+
+tuya = TuyaWizard()
+tuya.login_auto(user_code="YOUR_USER_CODE")
+devices = tuya.fetch_devices()
+
+postprocess_devices(devices, mode="scan")  # scans via rustuya and merges
+```
+
+### Without `rustuya` (inject your own scan data)
+
+If `rustuya` is not available but you already have `id`/`ip`(/`version`)
+data collected from elsewhere (for example via `rustuya-bridge`), inject
+those results directly. `version` is optional per item:
+
+```python
+from tuyawizard import TuyaWizard, apply_scan_results
+
+tuya = TuyaWizard()
+tuya.login_auto(user_code="YOUR_USER_CODE")
+devices = tuya.fetch_devices()
+
+scan_results = [
+    {"id": "bf...01", "ip": "192.168.1.10"},
+    {"id": "bf...02", "ip": "192.168.1.11", "version": "3.4"},
+]
+apply_scan_results(devices, scan_results)
+```
+
+---
+
 ## � How to get User Code
 
 1. Open the **Smart Life** or **Tuya Smart** app.
