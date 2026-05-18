@@ -4,7 +4,7 @@
 
 ---
 
-## 🔧 Features
+## Features
 
 - **Easy Authentication**: Support for QR code login using the Smart Life or Tuya Smart mobile apps.
 - **Automatic Token Management**: Automatically handles and refreshes cloud tokens.
@@ -14,7 +14,7 @@
 
 ---
 
-## 📦 Installation
+## Installation
 
 Install the package via pip:
 
@@ -30,7 +30,7 @@ pip install rustuya
 
 ---
 
-## ▶️ Quick Start (CLI)
+## Quick Start (CLI)
 
 You can run the wizard directly from your terminal:
 
@@ -80,7 +80,7 @@ python -m tuyawizard --postprocess-only --postprocess-mode scan
 
 ---
 
-## 🐍 Using as a Python Module
+## Using as a Python Module
 
 `tuyawizard` can also be imported and used as a module inside your own Python
 project — fetch the device list from the Tuya cloud and, optionally, enrich
@@ -123,7 +123,7 @@ apply_scan_results(devices, scan_results)
 
 ---
 
-## � How to get User Code
+## How to get User Code
 
 1. Open the **Smart Life** or **Tuya Smart** app.
 2. Go to **Me** (Profile) tab.
@@ -133,20 +133,20 @@ apply_scan_results(devices, scan_results)
 
 ---
 
-## 💾 Output Files
+## Output Files
 
 - **`tuyacreds.json`**: Contains sensitive authentication tokens and endpoint information. Keep this file secure.
 - **`tuyadevices.json`**: A structured JSON list of all your Tuya devices and their properties.
 
 ---
 
-## ❗ Notes
+## Notes
 
 - **Client Credentials**: This tool currently uses temporary Home Assistant client credentials. These are intended to be replaced when official 3rd-party developer credentials become more widely available.
 - **Python Version**: Requires Python 3.8 or higher.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
