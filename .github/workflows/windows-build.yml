@@ -1,0 +1,60 @@
+name: Build Windows EXE
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: windows/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ..
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build single-file EXE
+        run: >
+          pyinstaller
+          --onefile
+          --name tuyawizard
+          --collect-all tuyawizard
+          --collect-all rustuya
+          run.py
+
+      - name: Package EXE as zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/tuyawizard.exe -DestinationPath dist/tuyawizard-windows.zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tuyawizard-windows
+          path: windows/dist/tuyawizard-windows.zip
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: windows/dist/tuyawizard-windows.zip
