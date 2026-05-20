@@ -28,6 +28,12 @@ To enable the local network **scan** feature, you need to install the optional d
 pip install rustuya
 ```
 
+### Windows Executable
+
+A pre-built single-file `tuyawizard.exe` is available on the [Releases page](https://github.com/3735943886/tuyawizard/releases/latest). Download `tuyawizard-windows.zip`, extract it, and run `tuyawizard.exe`. No Python install required; the `scan` feature is bundled.
+
+> The executable is **not code-signed**, so Windows SmartScreen or antivirus software may warn on first run. Click **More info → Run anyway** to proceed.
+
 ---
 
 ## Quick Start (CLI)
