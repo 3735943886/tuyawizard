@@ -28,6 +28,16 @@ To enable the local network **scan** feature, you need to install the optional d
 pip install rustuya
 ```
 
+### `cryptography` (upstream missing dependency)
+
+`tuyawizard` itself does not depend on `cryptography`, but the underlying [`tuya-device-sharing-sdk`](https://github.com/tuya/tuya-device-sharing-sdk) imports it without declaring it in its own requirements. If `ModuleNotFoundError: No module named 'cryptography'` appears at runtime, install it manually:
+
+```bash
+pip install cryptography
+```
+
+(The bundled Windows `.exe` already includes it, so this only affects `pip`-installed setups.)
+
 ### Windows Executable
 
 A pre-built single-file `tuyawizard.exe` is available on the [Releases page](https://github.com/3735943886/tuyawizard/releases/latest). Download `tuyawizard-windows.zip`, extract it, and run `tuyawizard.exe`. No Python install required; the `scan` feature is bundled.
