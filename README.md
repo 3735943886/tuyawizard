@@ -22,10 +22,16 @@ Install the package via pip:
 pip install tuyawizard
 ```
 
-To enable the local network **scan** feature, you need to install the optional dependency:
+To enable the local network **scan** feature, install the optional dependency:
 
 ```bash
 pip install rustuya
+```
+
+When `tuyawizard` was installed with `pipx`, inject it into the same venv instead:
+
+```bash
+pipx inject tuyawizard rustuya
 ```
 
 ### `cryptography` (upstream missing dependency)
@@ -36,7 +42,13 @@ pip install rustuya
 pip install cryptography
 ```
 
-(The bundled Windows `.exe` already includes it, so this only affects `pip`-installed setups.)
+When `tuyawizard` was installed with `pipx`, inject it into the same venv instead:
+
+```bash
+pipx inject tuyawizard cryptography
+```
+
+(The bundled Windows `.exe` already includes it, so this only affects `pip`/`pipx`-installed setups.)
 
 ### Windows Executable
 
