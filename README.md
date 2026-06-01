@@ -149,6 +149,24 @@ scan_results = [
 apply_scan_results(devices, scan_results)
 ```
 
+### Lifecycle and cleanup (`close()` / context manager, v0.1.8+)
+
+The underlying [`tuya_sharing` SDK](https://github.com/tuya/tuya-device-sharing-sdk) does not fully tear down on `Manager.unload()` — its `requests.Session` connection pool is left open, and the optional `SharingMQ` background thread (if started) is not stopped. Long-running consumers that build a fresh `TuyaWizard` per operation will accumulate state (rustuya-manager observed **~750-950 KB RSS per cycle, never reclaimed**).
+
+Use the context-manager form to make teardown deterministic:
+
+```python
+from tuyawizard import TuyaWizard
+
+with TuyaWizard() as tuya:
+    tuya.login_auto(user_code="YOUR_USER_CODE")
+    devices = tuya.fetch_devices()
+# close() is called on exit — sessions closed, MQ thread joined,
+# cloud terminal invalidated.
+```
+
+Or call `close()` explicitly from a `finally` block. It is idempotent and safe before `login_auto()` (partial-construction tolerant).
+
 ---
 
 ## How to get User Code

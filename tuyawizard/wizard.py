@@ -165,9 +165,9 @@ class TuyaWizard:
             return False
 
     def login_auto(
-        self, 
-        user_code: Optional[str] = None, 
-        creds: Optional[Dict[str, Any]] = None, 
+        self,
+        user_code: Optional[str] = None,
+        creds: Optional[Dict[str, Any]] = None,
         qr_callback: Optional[Callable[[Optional[str]], None]] = None
     ) -> bool:
         """Try stored info first, fallback to QR login if fails"""
@@ -175,7 +175,7 @@ class TuyaWizard:
             self.info["user_code"] = user_code
         if qr_callback:
             self.qr_callback = qr_callback
-            
+
         if self._load_saved_info(creds):
             try:
                 self.logger.info("Trying login from stored info...")
@@ -184,8 +184,83 @@ class TuyaWizard:
                 return True
             except Exception as e:
                 self.logger.warning(f"Stored login info failed → fallback to QR: {e}")
-                
+
         return self.qr_login()
+
+    def close(self) -> None:
+        """Release SDK-side resources held by this wizard.
+
+        Long-running consumers that build a fresh ``TuyaWizard`` per
+        operation leak per-instance state — the `tuya_sharing` SDK does
+        not close its `requests.Session` pools or stop its optional
+        ``SharingMQ`` thread on `Manager.unload()`. Calling ``close()``
+        (or using ``with TuyaWizard(...) as w:``) makes teardown
+        deterministic.
+
+        Idempotent and tolerant of partial-construction states (no
+        ``login_auto`` called yet, ``Manager`` constructed but never
+        used, etc.).
+        """
+        manager = self.manager
+        self.manager = None
+
+        if manager is not None:
+            # Stop the SharingMQ background thread if one was started.
+            # `Manager.unload()` (tuya_sharing 0.2.9) does NOT do this —
+            # see https://github.com/tuya/tuya-device-sharing-sdk/blob/main/tuya_sharing/manager.py
+            mq = getattr(manager, "mq", None)
+            if mq is not None:
+                try:
+                    mq.stop()
+                except Exception as exc:
+                    self.logger.warning(f"SharingMQ.stop() failed: {exc}")
+                try:
+                    if mq.is_alive():
+                        mq.join(timeout=5)
+                except Exception:
+                    pass
+                manager.mq = None
+
+            # Invalidate the cloud terminal (the server-side bit
+            # Manager.unload does cover).
+            try:
+                manager.unload()
+            except Exception as exc:
+                self.logger.warning(f"Manager.unload() failed: {exc}")
+
+            # Close the CustomerApi connection pool — the actual
+            # RSS-accumulating culprit observed by downstream consumers
+            # (~750-950 KB per cycle).
+            customer_api = getattr(manager, "customer_api", None)
+            if customer_api is not None:
+                # Break the wizard ↔ manager ↔ customer_api ↔ token_listener
+                # cycle eagerly; gc can collect it, but breaking it here
+                # lets the refcount path do the work immediately.
+                customer_api.token_listener = None
+                session = getattr(customer_api, "session", None)
+                if session is not None:
+                    try:
+                        session.close()
+                    except Exception:
+                        pass
+
+        # LoginControl also holds a requests.Session. Closing it doesn't
+        # prevent a follow-up login (requests reopens transparently),
+        # but if this wizard is being discarded the pool should go too.
+        login_session = getattr(self.login, "session", None) if self.login else None
+        if login_session is not None:
+            try:
+                login_session.close()
+            except Exception:
+                pass
+
+        self.qr_callback = None
+
+    def __enter__(self) -> "TuyaWizard":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
 
 def load_devices_file(path: str) -> List[Dict[str, Any]]:
