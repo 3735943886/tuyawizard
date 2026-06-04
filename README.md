@@ -149,7 +149,7 @@ scan_results = [
 apply_scan_results(devices, scan_results)
 ```
 
-### Lifecycle and cleanup (`close()` / context manager, v0.1.8+)
+### Lifecycle and cleanup (`close()` / context manager, v0.1.9+)
 
 The underlying [`tuya_sharing` SDK](https://github.com/tuya/tuya-device-sharing-sdk) does not fully tear down on `Manager.unload()` — its `requests.Session` connection pool is left open, and the optional `SharingMQ` background thread (if started) is not stopped. Long-running consumers that build a fresh `TuyaWizard` per operation will accumulate state (rustuya-manager observed **~750-950 KB RSS per cycle, never reclaimed**).
 
@@ -161,11 +161,13 @@ from tuyawizard import TuyaWizard
 with TuyaWizard() as tuya:
     tuya.login_auto(user_code="YOUR_USER_CODE")
     devices = tuya.fetch_devices()
-# close() is called on exit — sessions closed, MQ thread joined,
-# cloud terminal invalidated.
+# close() is called on exit — sessions closed, MQ thread joined.
+# Saved tokens stay valid so the next run can skip the QR scan.
 ```
 
 Or call `close()` explicitly from a `finally` block. It is idempotent and safe before `login_auto()` (partial-construction tolerant).
+
+**`revoke_terminal` (default `False`)**: by default `close()` only releases local resources. The cloud-side access/refresh tokens stored in `info_file` remain valid so the next `TuyaWizard` invocation can skip the QR scan. Only pass `close(revoke_terminal=True)` on an **explicit logout** where the saved credentials should be invalidated — this triggers `Manager.unload()` which POSTs to Tuya's `/v1.0/m/token/terminal/expire` endpoint and kills the tokens server-side. Long-running services that reuse the credentials file across runs must leave the default; otherwise every subsequent run will hit the QR fallback.
 
 ---
 

@@ -151,14 +151,89 @@ def test_close_closes_requests_sessions(tmp_path):
     )
 
 
-def test_close_calls_manager_unload(tmp_path):
+def test_close_does_not_revoke_by_default(tmp_path):
+    """Default close() must NOT call Manager.unload() — that would POST
+    to /v1.0/m/token/terminal/expire and kill the saved cloud-side
+    tokens, forcing every subsequent run into the QR fallback. This is
+    the 0.1.8 regression observed by rustuya-manager."""
     FakeManager = _make_fake_manager_class(start_mq=False)
     wizard = _build_wizard(tmp_path, FakeManager)
     manager = wizard.manager
 
     wizard.close()
 
-    assert manager.unload_called
+    assert manager.unload_called is False
+
+
+def test_close_with_revoke_terminal_calls_unload(tmp_path):
+    """Explicit revoke_terminal=True still invalidates the cloud
+    terminal — the explicit-logout path."""
+    FakeManager = _make_fake_manager_class(start_mq=False)
+    wizard = _build_wizard(tmp_path, FakeManager)
+    manager = wizard.manager
+
+    wizard.close(revoke_terminal=True)
+
+    assert manager.unload_called is True
+
+
+def test_close_without_revoke_still_tears_down_sessions_and_mq(
+    tmp_path, baseline_threads
+):
+    """The memory-cleanup half of close() (the 0.1.8 fix) must keep
+    working under the new no-revoke default."""
+    FakeManager = _make_fake_manager_class(start_mq=True)
+    wizard = _build_wizard(tmp_path, FakeManager)
+    mq = wizard.manager.mq
+    customer_session = wizard.manager.customer_api.session
+    assert mq.is_alive()
+    assert not customer_session.closed
+
+    wizard.close()  # default revoke_terminal=False
+
+    assert not mq.is_alive()
+    assert customer_session.closed
+    assert threading.active_count() == baseline_threads
+
+
+def test_close_with_revoke_tolerates_unload_failure(tmp_path):
+    """If Manager.unload() raises (e.g. network down), close() still
+    completes the local-side teardown."""
+    FakeManager = _make_fake_manager_class(start_mq=False)
+    wizard = _build_wizard(tmp_path, FakeManager)
+
+    def boom():
+        raise RuntimeError("simulated network failure")
+
+    wizard.manager.unload = boom
+    customer_session = wizard.manager.customer_api.session
+
+    wizard.close(revoke_terminal=True)  # must not raise
+
+    assert customer_session.closed
+    assert wizard.manager is None
+
+
+def test_context_manager_does_not_revoke(tmp_path):
+    """`with TuyaWizard() as w:` must default to no-revoke so the
+    saved creds are reusable on the next run."""
+    FakeManager = _make_fake_manager_class(start_mq=False)
+    from tuyawizard import TuyaWizard
+
+    with patch("tuyawizard.wizard.Manager", FakeManager):
+        with TuyaWizard(info_file=str(tmp_path / "creds.json")) as wizard:
+            wizard.info = {
+                "user_code": "test-user",
+                "terminal_id": "fake-terminal",
+                "endpoint": "https://example.invalid",
+                "access_token": "tok",
+                "refresh_token": "rtok",
+                "expire_time": 9999999999,
+            }
+            wizard.init_manager()
+            manager = wizard.manager
+
+    assert manager.unload_called is False
 
 
 def test_close_breaks_token_listener_cycle(tmp_path):

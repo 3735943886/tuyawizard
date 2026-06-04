@@ -187,7 +187,7 @@ class TuyaWizard:
 
         return self.qr_login()
 
-    def close(self) -> None:
+    def close(self, *, revoke_terminal: bool = False) -> None:
         """Release SDK-side resources held by this wizard.
 
         Long-running consumers that build a fresh ``TuyaWizard`` per
@@ -200,6 +200,17 @@ class TuyaWizard:
         Idempotent and tolerant of partial-construction states (no
         ``login_auto`` called yet, ``Manager`` constructed but never
         used, etc.).
+
+        Args:
+            revoke_terminal: When True, call ``Manager.unload()`` which
+                POSTs to Tuya's ``/v1.0/m/token/terminal/expire`` endpoint,
+                invalidating this terminal's access/refresh tokens on the
+                server. **Default False** — long-running consumers that
+                reuse ``info_file`` across calls (e.g. a web service that
+                runs the wizard multiple times) must NOT revoke, or every
+                subsequent run will hit the QR fallback. Only set True
+                on explicit logout where the saved credentials should no
+                longer be reusable.
         """
         manager = self.manager
         self.manager = None
@@ -221,12 +232,16 @@ class TuyaWizard:
                     pass
                 manager.mq = None
 
-            # Invalidate the cloud terminal (the server-side bit
-            # Manager.unload does cover).
-            try:
-                manager.unload()
-            except Exception as exc:
-                self.logger.warning(f"Manager.unload() failed: {exc}")
+            # Invalidate the cloud terminal — opt-in only. The SDK's
+            # unload() POSTs to /v1.0/m/token/terminal/expire which kills
+            # the saved access+refresh tokens on the server, so consumers
+            # that reuse the credentials file across calls must NOT revoke
+            # (every subsequent run would hit the QR fallback).
+            if revoke_terminal:
+                try:
+                    manager.unload()
+                except Exception as exc:
+                    self.logger.warning(f"Manager.unload() failed: {exc}")
 
             # Close the CustomerApi connection pool — the actual
             # RSS-accumulating culprit observed by downstream consumers
