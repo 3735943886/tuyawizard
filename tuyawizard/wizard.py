@@ -588,24 +588,29 @@ def wizard(
         if not user_code:
             user_code = None
 
-    tuya = TuyaWizard(logger=logger, info_file=creds_file)
+    # Use the context manager so SDK-side resources (requests.Session
+    # pools, the optional SharingMQ thread) are torn down on the way out
+    # — including on exception. Without this, every call to wizard() as a
+    # module leaks per-instance SDK state, which is exactly the leak the
+    # TuyaWizard.close() machinery exists to prevent. close() defaults to
+    # revoke_terminal=False, so the saved creds stay reusable next run.
+    with TuyaWizard(logger=logger, info_file=creds_file) as tuya:
+        if not tuya.login_auto(
+            user_code=user_code,
+            creds=creds,
+            qr_callback=qr_callback or terminal_qr_handler
+        ):
+            logger.error("Authentication failed.")
+            return
 
-    if not tuya.login_auto(
-        user_code=user_code, 
-        creds=creds, 
-        qr_callback=qr_callback or terminal_qr_handler
-    ):
-        logger.error("Authentication failed.")
-        return
+        tuyadevices = tuya.fetch_devices()
 
-    tuyadevices = tuya.fetch_devices()
-
-    if tuyadevices:
-        print(f"\n>> Saving {len(tuyadevices)} tuya devices to {device_file}")
-        try:
-            with open(device_file, "w", encoding="utf-8") as outfile:
-                json.dump(tuyadevices, outfile, indent=4, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"Failed to save devices to {device_file}: {e}")
-    else:
-        logger.warning("No devices found or failed to fetch devices.")
+        if tuyadevices:
+            print(f"\n>> Saving {len(tuyadevices)} tuya devices to {device_file}")
+            try:
+                with open(device_file, "w", encoding="utf-8") as outfile:
+                    json.dump(tuyadevices, outfile, indent=4, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Failed to save devices to {device_file}: {e}")
+        else:
+            logger.warning("No devices found or failed to fetch devices.")

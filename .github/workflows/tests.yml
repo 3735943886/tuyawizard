@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and test deps
+        run: |
+          python -m pip install --upgrade pip
+          # cryptography is imported by tuya_sharing.customerapi but is NOT a
+          # declared dependency of tuya-device-sharing-sdk, so `import
+          # tuyawizard` fails without it. Install it explicitly here until
+          # upstream fixes the missing dependency.
+          python -m pip install . cryptography pytest
+
+      - name: Run tests
+        run: pytest -q
