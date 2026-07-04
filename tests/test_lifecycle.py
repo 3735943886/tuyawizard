@@ -21,10 +21,20 @@ We mock `Manager` so the tests don't talk to Tuya cloud.
 
 from __future__ import annotations
 
+import importlib
 import threading
 from unittest.mock import patch, MagicMock
 
 import pytest
+
+# Patch the wizard *module* object directly rather than the string
+# "tuyawizard.wizard.Manager": the package re-exports a `wizard` function
+# (from .wizard import wizard), which shadows the `wizard` submodule in
+# the package namespace, so mock's dotted-string resolution lands on the
+# function (no `Manager` attribute) on some Python/mock versions
+# (observed failing on 3.9/3.10). Resolving the module via importlib and
+# using patch.object is unambiguous everywhere.
+_wizard = importlib.import_module("tuyawizard.wizard")
 
 
 class _FakeMQ(threading.Thread):
@@ -100,7 +110,7 @@ def _build_wizard(tmp_path, FakeManager):
     to succeed without hitting the network."""
     from tuyawizard import TuyaWizard
 
-    with patch("tuyawizard.wizard.Manager", FakeManager):
+    with patch.object(_wizard, "Manager", FakeManager):
         wizard = TuyaWizard(info_file=str(tmp_path / "creds.json"))
         wizard.info = {
             "user_code": "test-user",
@@ -220,7 +230,7 @@ def test_context_manager_does_not_revoke(tmp_path):
     FakeManager = _make_fake_manager_class(start_mq=False)
     from tuyawizard import TuyaWizard
 
-    with patch("tuyawizard.wizard.Manager", FakeManager):
+    with patch.object(_wizard, "Manager", FakeManager):
         with TuyaWizard(info_file=str(tmp_path / "creds.json")) as wizard:
             wizard.info = {
                 "user_code": "test-user",
@@ -289,7 +299,7 @@ def test_context_manager_closes_on_normal_exit(tmp_path, baseline_threads):
     FakeManager = _make_fake_manager_class(start_mq=True)
     from tuyawizard import TuyaWizard
 
-    with patch("tuyawizard.wizard.Manager", FakeManager):
+    with patch.object(_wizard, "Manager", FakeManager):
         with TuyaWizard(info_file=str(tmp_path / "creds.json")) as wizard:
             wizard.info = {
                 "user_code": "test-user",
@@ -311,7 +321,7 @@ def test_context_manager_closes_on_exception(tmp_path, baseline_threads):
     from tuyawizard import TuyaWizard
 
     with pytest.raises(RuntimeError, match="boom"):
-        with patch("tuyawizard.wizard.Manager", FakeManager):
+        with patch.object(_wizard, "Manager", FakeManager):
             with TuyaWizard(info_file=str(tmp_path / "creds.json")) as wizard:
                 wizard.info = {
                     "user_code": "test-user",

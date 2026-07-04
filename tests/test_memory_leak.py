@@ -30,11 +30,21 @@ contract.
 from __future__ import annotations
 
 import gc
+import importlib
 import threading
 import weakref
 from unittest.mock import patch
 
 import pytest
+
+# Patch the wizard *module* object directly rather than the string
+# "tuyawizard.wizard.Manager": the package re-exports a `wizard` function
+# (from .wizard import wizard) that shadows the `wizard` submodule in the
+# package namespace, so mock's dotted-string resolution lands on the
+# function (no `Manager` attribute) on some Python/mock versions
+# (observed failing on 3.9/3.10). Resolving the module via importlib and
+# using patch.object is unambiguous everywhere.
+_wizard = importlib.import_module("tuyawizard.wizard")
 
 
 # --------------------------------------------------------------------------
@@ -159,8 +169,8 @@ def _build_wizard(tmp_path, FakeManager, FakeLoginControl):
     initialized, without hitting the network."""
     from tuyawizard import TuyaWizard
 
-    with patch("tuyawizard.wizard.Manager", FakeManager), patch(
-        "tuyawizard.wizard.LoginControl", FakeLoginControl
+    with patch.object(_wizard, "Manager", FakeManager), patch.object(
+        _wizard, "LoginControl", FakeLoginControl
     ):
         wizard = TuyaWizard(info_file=str(tmp_path / "creds.json"))
         wizard.info = dict(_INFO)
@@ -275,8 +285,8 @@ def test_wizard_function_tears_down_across_calls(tmp_path):
 
     creds = dict(_INFO)
     for _ in range(CYCLES):
-        with patch("tuyawizard.wizard.Manager", FakeManager), patch(
-            "tuyawizard.wizard.LoginControl", FakeLoginControl
+        with patch.object(_wizard, "Manager", FakeManager), patch.object(
+            _wizard, "LoginControl", FakeLoginControl
         ):
             wizard_fn(
                 creds=creds,
@@ -310,8 +320,8 @@ def test_wizard_function_tears_down_on_exception(tmp_path):
         raise RuntimeError("escapes wizard")
 
     creds = dict(_INFO)
-    with patch("tuyawizard.wizard.Manager", FakeManager), patch(
-        "tuyawizard.wizard.LoginControl", FakeLoginControl
+    with patch.object(_wizard, "Manager", FakeManager), patch.object(
+        _wizard, "LoginControl", FakeLoginControl
     ), patch.object(FakeManager, "update_device_cache", fetch_boom), patch.object(
         FakeLoginControl, "qr_code", qr_boom, create=True
     ):
